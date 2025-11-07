@@ -78,21 +78,49 @@ restore_rules() {
 }
 
 check_status() {
-    OUTPUT_POLICY=$(sudo iptables -L OUTPUT -n | grep "Chain OUTPUT" | awk '{print $4}')
-    INPUT_POLICY=$(sudo iptables -L INPUT -n | grep "Chain INPUT" | awk '{print $4}')
-    FORWARD_POLICY=$(sudo iptables -L FORWARD -n | grep "Chain FORWARD" | awk '{print $4}')
+    VPN_INTERFACE="tun0"
+    TEST_HOST="8.8.8.8"  # Google DNS (just for connectivity test)
 
     BOLD_GREEN="\e[1;32m"
     BOLD_RED="\e[1;31m"
     RESET="\e[0m"
 
-    if [[ "$OUTPUT_POLICY" == "DROP" && "$INPUT_POLICY" == "DROP" && "$FORWARD_POLICY" == "DROP" ]]; then
-        echo -e "[+] Killswitch: ${BOLD_GREEN}ON${RESET}"
+    # Check if VPN interface exists
+    if ip link show "$VPN_INTERFACE" > /dev/null 2>&1; then
+        vpn_iface_up=true
     else
-        echo -e "[-] Killswitch: ${BOLD_RED}OFF${RESET}"
+        vpn_iface_up=false
     fi
 
+    # Test traffic over default route (non-VPN)
+    if ping -I eth0 -c 1 -W 1 "$TEST_HOST" >/dev/null 2>&1; then
+        non_vpn_ok=true
+    else
+        non_vpn_ok=false
+    fi
+
+    # Test traffic over VPN interface
+    if [ "$vpn_iface_up" = true ]; then
+        if ping -I "$VPN_INTERFACE" -c 1 -W 1 "$TEST_HOST" >/dev/null 2>&1; then
+            vpn_ok=true
+        else
+            vpn_ok=false
+        fi
+    else
+        vpn_ok=false
+    fi
+
+    # Decision logic
+    if [ "$vpn_ok" = true ] && [ "$non_vpn_ok" = false ]; then
+        echo -e "[+] Killswitch: ${BOLD_GREEN}ON${RESET}"
+    elif [ "$vpn_ok" = false ] && [ "$non_vpn_ok" = false ]; then
+        echo -e "[*] Killswitch active, but VPN appears DOWN."
+    else
+        echo -e "[-] Killswitch: ${BOLD_RED}OFF${RESET}"
+        echo "    (Non-VPN traffic is still getting through)"
+    fi
 }
+
 
 if [ "$#" -ne 1 ]; then
     echo "[-] Usage: killswitch.sh <status|on|off>"
