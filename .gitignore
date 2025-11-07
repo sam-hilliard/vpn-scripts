@@ -1,2 +1,2 @@
-./.iptables-backup.txt
-./.ip6tables-backup.txt
+.iptables-backup.txt
+.ip6tables-backup.txt
