@@ -1,7 +1,7 @@
 #!/bin/bash
 
 backup_rules() {
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    SCRIPT_DIR=$(dirname $0)
 
     IPV4_BACKUP="$SCRIPT_DIR/.iptables-backup.txt"
     IPV6_BACKUP="$SCRIPT_DIR/.ip6tables-backup.txt"
