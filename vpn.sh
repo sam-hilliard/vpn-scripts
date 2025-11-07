@@ -23,10 +23,12 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 
+SCRIPT_DIR=$(dirname "$0")
+
 case "$1" in
     status)
         # Checking vpn status
-        ./check_vpn_status.sh
+        "$SCRIPT_DIR/check_vpn_status.sh"
         ;;
     restart)
         # Restarting current vpn
@@ -38,7 +40,7 @@ case "$1" in
         ;;
     switch)
         # Switching vpn
-        ./switch_vpn.sh
+        "$SCRIPT_DIR/switch_vpn.sh"
         ;;
     *)
         echo "Unknown command: $1"
