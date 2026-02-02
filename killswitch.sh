@@ -1,22 +1,24 @@
 #!/bin/bash
+set -euo pipefail
+
+# Resolve the directory this script lives in (alias / symlink safe)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+IPV4_BACKUP="$SCRIPT_DIR/.iptables-backup.txt"
+IPV6_BACKUP="$SCRIPT_DIR/.ip6tables-backup.txt"
 
 backup_rules() {
-    SCRIPT_DIR=$(dirname $0)
-
-    IPV4_BACKUP="$SCRIPT_DIR/.iptables-backup.txt"
-    IPV6_BACKUP="$SCRIPT_DIR/.ip6tables-backup.txt"
-
     echo "[*] Checking for existing firewall backups..."
 
-    # Only back up the *first time* (to preserve original firewall state)
-    if [[ ! -f $IPV4_BACKUP ]]; then
+    # Only back up the first time (preserve original firewall state)
+    if [[ ! -f "$IPV4_BACKUP" ]]; then
         echo "[-] Backing up original IPv4 rules to $IPV4_BACKUP"
         sudo iptables-save > "$IPV4_BACKUP"
     else
         echo "[✓] IPv4 backup already exists — not overwriting."
     fi
 
-    if [[ ! -f $IPV6_BACKUP ]]; then
+    if [[ ! -f "$IPV6_BACKUP" ]]; then
         echo "[-] Backing up original IPv6 rules to $IPV6_BACKUP"
         sudo ip6tables-save > "$IPV6_BACKUP"
     else
@@ -50,10 +52,10 @@ apply_rules() {
     sudo iptables -A INPUT -i tun+ -j ACCEPT
     sudo iptables -A OUTPUT -o tun+ -j ACCEPT
 
-    # === Allow the VPN client to connect to the VPN server ===
-    # Adjust interface and port as needed (example assumes UDP 1194 on wlan0)
+    # === Allow VPN client to connect to VPN server ===
     VPN_INTERFACE="wlan0"
     VPN_PORT="1194"
+
     sudo iptables -A OUTPUT -o "$VPN_INTERFACE" -p udp --dport "$VPN_PORT" -j ACCEPT
     sudo iptables -A INPUT  -i "$VPN_INTERFACE" -p udp --sport "$VPN_PORT" -j ACCEPT
 
@@ -66,63 +68,62 @@ apply_rules() {
     sudo iptables -A OUTPUT -m limit --limit 3/min -j LOG --log-prefix "OUTPUT DROP: " --log-level 7
 
     echo "[+] Firewall killswitch rules applied successfully."
-
 }
 
 restore_rules() {
-    sudo iptables-restore < ./.iptables-backup.txt
-    sudo ip6tables-restore < ./.ip6tables-backup.txt
+    if [[ ! -f "$IPV4_BACKUP" || ! -f "$IPV6_BACKUP" ]]; then
+        echo "[-] Firewall backup files not found in $SCRIPT_DIR"
+        echo "    Cannot safely restore firewall state."
+        exit 1
+    fi
 
-    sudo rm ./.iptables-backup.txt
-    sudo rm ./.ip6tables-backup.txt
+    sudo iptables-restore < "$IPV4_BACKUP"
+    sudo ip6tables-restore < "$IPV6_BACKUP"
+
+    sudo rm -f "$IPV4_BACKUP" "$IPV6_BACKUP"
+
+    echo "[+] Firewall rules restored."
 }
 
 check_status() {
     VPN_INTERFACE="tun0"
-    TEST_HOST="8.8.8.8"  # Google DNS (just for connectivity test)
+    TEST_HOST="8.8.8.8"
 
     BOLD_GREEN="\e[1;32m"
     BOLD_RED="\e[1;31m"
     RESET="\e[0m"
 
-    # Check if VPN interface exists
     if ip link show "$VPN_INTERFACE" > /dev/null 2>&1; then
         vpn_iface_up=true
     else
         vpn_iface_up=false
     fi
 
-    # Test traffic over default route (non-VPN)
+    # Test non-VPN traffic
     if ping -I eth0 -c 1 -W 1 "$TEST_HOST" >/dev/null 2>&1; then
         non_vpn_ok=true
     else
         non_vpn_ok=false
     fi
 
-    # Test traffic over VPN interface
-    if [ "$vpn_iface_up" = true ]; then
-        if ping -I "$VPN_INTERFACE" -c 1 -W 1 "$TEST_HOST" >/dev/null 2>&1; then
-            vpn_ok=true
-        else
-            vpn_ok=false
-        fi
+    # Test VPN traffic
+    if [[ "$vpn_iface_up" == true ]] && ping -I "$VPN_INTERFACE" -c 1 -W 1 "$TEST_HOST" >/dev/null 2>&1; then
+        vpn_ok=true
     else
         vpn_ok=false
     fi
 
-    # Decision logic
-    if [ "$vpn_ok" = true ] && [ "$non_vpn_ok" = false ]; then
+    if [[ "$vpn_ok" == true && "$non_vpn_ok" == false ]]; then
         echo -e "[+] Killswitch: ${BOLD_GREEN}ON${RESET}"
-    elif [ "$vpn_ok" = false ] && [ "$non_vpn_ok" = false ]; then
-        echo -e "[*] Killswitch active, but VPN appears DOWN."
+    elif [[ "$vpn_ok" == false && "$non_vpn_ok" == false ]]; then
+        echo "[*] Killswitch active, but VPN appears DOWN."
     else
         echo -e "[-] Killswitch: ${BOLD_RED}OFF${RESET}"
         echo "    (Non-VPN traffic is still getting through)"
     fi
 }
 
-
-if [ "$#" -ne 1 ]; then
+if [[ "$#" -ne 1 ]]; then
     echo "[-] Usage: killswitch.sh <status|on|off>"
     exit 1
 fi
@@ -132,8 +133,8 @@ case "$1" in
         check_status
         ;;
     on)
-       echo "[+] Enabling on killswitch..."
-       apply_rules 
+        echo "[+] Enabling killswitch..."
+        apply_rules
         ;;
     off)
         echo "[+] Disabling killswitch..."
@@ -142,5 +143,6 @@ case "$1" in
     *)
         echo "[-] Unknown command: $1"
         echo "Usage: killswitch.sh <status|on|off>"
-        exit 1 ;;
+        exit 1
+        ;;
 esac

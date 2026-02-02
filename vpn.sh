@@ -9,13 +9,13 @@ get_running_vpn() {
 restart_vpn() {
     provider=$(get_running_vpn)
     echo "Restarting $provider..."
-    sudo systemctl restart "openvpn@$provider"
+    systemctl restart "openvpn@$provider"
 }
 
 stop_vpn() {
     provider=$(get_running_vpn)
     echo "Stopping $provider..."
-    sudo systemctl stop "openvpn@$provider"
+    systemctl stop "openvpn@$provider"
 }
 
 if [ "$#" -ne 1 ]; then

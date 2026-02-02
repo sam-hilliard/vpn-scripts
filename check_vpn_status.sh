@@ -25,7 +25,7 @@ while [[ $attempt -lt $max_attempts ]]; do
 done
 
 if [[ $attempt -eq $max_attempts ]]; then
-    echo -e "\033[1;31mDisconnected!\033[0m"
+    echo -e "[-] \033[1;31mDisconnected!\033[0m"
     echo "Make sure OpenVPN is running."
 else
   provider=$(echo $vpn_status | grep -o -e 'connection to .*' | sed 's/connection to //')
@@ -37,10 +37,14 @@ else
   region=$(echo $ip_data | jq -r '.region')
   country=$(echo $ip_data | jq -r '.country')
 
-  echo -e "\033[1;32mConnected!\033[0m"
+  echo -e "[+] \033[1;32mConnected!\033[0m"
   echo "Provider: $provider"
   echo "Current IP: $cur_ip"
   echo "Location: $city, $region $country"
+
+  cur_dir=$(dirname "$0")
+  kill_switch="$cur_dir/killswitch.sh"
+  "$kill_switch" status
 fi
 
 echo -e "\n"
